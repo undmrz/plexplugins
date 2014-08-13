@@ -1,0 +1,118 @@
+# -*- coding: utf-8 -*-
+
+###################################################################################
+# 
+# This work is licensed under a Creative Commons Attribution 3.0 Unported License.
+# See http://creativecommons.org/licenses/by/3.0/deed.en_US for detail.
+#
+###################################################################################
+
+import traceback
+
+WATCHIS_URL = 'http://watch.is'
+WATCHIS_LOGIN = '%s/api/?username=%%s&password=%%s' % WATCHIS_URL
+
+####################################################################################################
+def NormalizeURL(url):
+    return url
+
+####################################################################################################
+def MetadataObjectForURL(url):
+    try:
+        desc = GetDescription(url)
+        posterUrl = '%s/posters/%s.jpg' % (WATCHIS_URL, desc['id'])
+
+        return VideoClipObject(
+            title = str(desc['title']),
+            year = int(desc['year']),
+            summary = str(desc['about']),
+            genres = [str(desc['genre'])],
+            directors = [str(desc['director'])],
+            countries = [str(desc['country'])],
+            duration = TimeToMs(str(desc['duration'])),
+            thumb = Resource.ContentsOfURLWithFallback(posterUrl, fallback='icon-default.png')
+        )
+    except:
+        return VideoClipObject(
+            title = '<error>',
+            summary = '<An error occurred while fetching metadata>',
+        )
+
+####################################################################################################
+def MediaObjectsForURL(url):
+    return [
+        MediaObject(
+            parts = [PartObject(key=Callback(PlayVideo, url=url, format='hd', codecs='H264'))],
+            container = Container.MP4,
+            video_codec = VideoCodec.H264,
+            video_resolution = '720',
+            audio_codec = AudioCodec.AAC,
+            audio_channels = 2,
+            optimized_for_streaming = True
+        ),
+        MediaObject(
+            parts = [PartObject(key=Callback(PlayVideo, url=url, format='sd', codecs='H264'))],
+            container = Container.MP4,
+            video_codec = VideoCodec.H264,
+            video_resolution = '480',
+            audio_codec = AudioCodec.AAC,
+            audio_channels = 2,
+            optimized_for_streaming = True
+        )
+    ]
+####################################################################################################
+def GetVideoURL(url, format=None, codecs=None):
+    desc = GetDescription(url)
+    if format == 'hd':
+        return str(desc['hdvideo'])
+    
+    return str(desc['video'])
+
+####################################################################################################
+@indirect
+def PlayVideo(url, format=None, codecs=None):
+    try:
+        try:
+            video_url = GetVideoURL(url, format, codecs)
+        except:
+            video_url = GetVideoURL(url, None, 'H264,VP8,VP6')
+
+        if video_url is None:
+            return None
+
+        return IndirectResponse(VideoClipObject, key=video_url)
+    except:
+        Log.Exception("Couldn't find all the required info to play this video.")
+        raise Ex.MediaNotAvailable
+
+####################################################################################################
+# Queue fix (PlayVideoIndirect was renamed to PlayVideo at one point)
+PlayVideoIndirect = PlayVideo
+
+####################################################################################################
+def GetDescription(url):
+    Login()
+    descXml = XML.ElementFromURL(url, cacheTime=CACHE_1WEEK)
+    CheckLoggedIn(descXml)
+    descString = XML.StringFromElement(descXml.xpath('//item')[0])
+    return XML.ObjectFromString(descString)
+
+####################################################################################################
+def CheckLoggedIn(xml):
+    errorText = xml.xpath('//error/text()')
+    if errorText:
+        if errorText[0] == 'Access Denied':
+            raise Ex.MediaNotAuthorized
+
+####################################################################################################
+def TimeToMs(timecode):
+    duration = timecode[ : -7]
+    seconds = int(duration) * 60
+    return seconds * 1000
+
+####################################################################################################
+def Login():
+    Log(' --> Trying to log in')
+
+    url = WATCHIS_LOGIN % (Prefs['username'], Prefs['password'])
+    login = HTTP.Request(url).content

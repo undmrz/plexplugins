@@ -1,0 +1,21 @@
+{
+  "Main": "Главная",
+  "Main Page": "Заглавная страница",
+  "Top": "Лучшее",
+  "Top Rated Videos": "Лучшее по рейтингам",
+  "Genres": "Жанры",
+  "Genre Categories": "Список жанров",
+  "Bookmarks": "Закладки",
+  "Bookmarks Page": "Страница закладок",
+  "Search": "Поиск",
+  "Preferences...": "Настройки",
+  "More...": "Ещё...",
+  "No More Videos": "Нет данных",
+  "No more videos are available...": "Больше ничего нет...",
+  "No Results": "Нет результатов",
+  "No videos found...": "По данному запросу ничего не найдено",
+  "Error": "Ошибка",
+  "Search error": "Во время операции поиска произошла ошибка",
+  "Please enter your email and password in the preferences.": "Введите ваш логин и пароль в настройках.",
+  "Please enter your correct email and password in the preferences.": "Введите корректный логин и пароль в настройках."
+}
