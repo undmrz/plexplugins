@@ -1,0 +1,153 @@
+# -*- coding: utf-8 -*-
+
+####################################################################################################
+# 
+# This work is licensed under a Creative Commons Attribution 3.0 Unported License.
+# See http://creativecommons.org/licenses/by/3.0/deed.en_US for detail.
+#
+####################################################################################################
+
+import traceback
+from urlparse import urlparse, parse_qs
+import json
+import base64
+import urllib2
+
+CXZTO_URL = 'http://cxz.to'
+PLAYVIDEO_URL = CXZTO_URL + '%s?json_link'
+
+####################################################################################################
+def NormalizeURL(url):
+    return url
+
+####################################################################################################
+def MetadataObjectForURL(url):
+    try:
+        desc = GetDescription(url)
+        return VideoClipObject(
+            title = desc['title'],
+            year = int(desc['year']),
+            summary = str(desc['plot']),
+            genres = [x['title'] for x in desc['genres']],
+            directors = [x['title'] for x in desc['directors']],
+            countries = [x['title'] for x in desc['countries']],
+            content_rating = desc['rating'],
+            roles = desc['roles'],
+            thumb = Resource.ContentsOfURLWithFallback(desc['poster'], fallback='icon-default.png')
+        )
+    except Exception, e:
+        Log(e)
+        return VideoClipObject(
+            title = '<error>',
+            summary = '<An error occurred while fetching metadata>',
+        )
+
+####################################################################################################
+def MediaObjectsForURL(url):
+    desc = GetDescription(url)
+    videos = desc['videos']
+    mos = []
+    for video in videos:
+        mo = MediaObject(
+            parts = [PartObject(key=Callback(PlayVideo, url=video['url'], fileId=video['fileId']))],
+            protocol='http',
+            container = Container.MP4,
+            video_codec = VideoCodec.H264,
+            video_resolution = deduceResolution(video),
+            audio_codec = AudioCodec.AAC,
+            audio_channels = 2,
+            optimized_for_streaming = True
+        )
+        mos.append(mo)
+    return mos
+
+####################################################################################################
+@indirect
+def PlayVideo(url, fileId):
+    try:
+        # fetch a real video stream link
+        videoUrl = fetchVideoStreamUrl(url, fileId)
+        return IndirectResponse(VideoClipObject, key=videoUrl)
+    except Exception, e:
+        Log.Exception("Couldn't play this video.")
+        raise Ex.MediaNotAvailable
+
+####################################################################################################
+def GetDescription(url):
+    try:
+        parseResult = urlparse(url)
+        parsedQuery = parse_qs(parseResult.query)
+        encodedJson = parsedQuery['data'][0]
+        desc = json.loads(base64.urlsafe_b64decode(encodedJson))
+        return desc
+    except Exception, e:
+        Log(e)
+        raise e
+
+####################################################################################################
+def fetchVideoStreamUrl(srcUrl, fileId):
+    # request a json with player data
+    req = urllib2.Request(srcUrl + '&isStartRequest=true')
+    # this cookie required to get hd quality stream
+    req.add_header('Cookie', 'plquality_max=1')
+    req.add_header('Referer', srcUrl)
+    req.add_header('X-Requested-With', 'XMLHttpRequest')
+    response = urllib2.urlopen(req)
+
+    dataFile = json.load(response)
+    # file list is by 'actionsData/files' key
+    filesData = dataFile['actionsData']['files']
+    # look up for our file in the list
+    baseUrl = None
+    for fileData in filesData:
+        if fileData['id'] == fileId:
+            baseUrl = fileData['url']
+            break
+    if not baseUrl:
+        raise Ex.MediaNotAvailable
+    # fetch a real url
+    srcUrl2 = PLAYVIDEO_URL % baseUrl
+    # a workaround to get highest quality stream, but it is not tested if a movie has sd quality only, so let's use a special cookie
+    # srcUrl2 = srcUrl2.replace('.mp4', '_hd.mp4')
+
+    req = urllib2.Request(srcUrl2)
+    # this cookie required to get hd quality stream
+    req.add_header('Cookie', 'plquality_max=1')
+    req.add_header('Referer', srcUrl)
+    req.add_header('X-Requested-With', 'XMLHttpRequest')
+    # and the real url iiiiiiiiis!
+    response = urllib2.urlopen(req)
+    data = json.load(response)
+    return data['link']
+
+####################################################################################################
+def deduceResolution(videoItem):
+    quality = videoItem['qualityId']
+    # qualityId is like 'video-720', so remove 'video-' prefix
+    quality = quality[6 :]
+    fileName = videoItem['fileName']
+    if quality in ('360', '480', '720', '1080'):
+        return quality
+
+    if fileName.split('.')[-2] == '360':
+        # they seems to auto re-encode files into lower resolution,
+        # such a file name contains '.360' just before extension, e.g. MyCoolMovie.BDRip.1080p.ENG.DTS.360.mp4
+        # obiously, it is 360p version
+        return '360'
+
+    if quality == 'hdrip':
+        return '720'
+
+    if quality in ('tvrip', 'satrip', 'dvdrip', 'hdtvrip'):
+        return '480'
+
+    if quality == 'webdl':
+        # webdl usually 720p
+        if '1080' in fileName:
+            return '1080'
+        return '720'
+
+    # unknown
+    Log('Unknown quality ID: %s for %s' % (videoItem['qualityId'], videoItem['fileName']))
+    return '360'
+
