@@ -314,7 +314,12 @@ class API(object):
     def fetchItemPoster(self, itemUrl, itemElem):
         try:
             imgElem = itemElem.xpath('./span/img')
-            return imgElem[0].attrib['src'];
+            posterUrl = imgElem[0].attrib['src']
+            # [25.01.2016] Currently poster url is without protocol string, Plex cannot handle it correctly. 
+            # So just add 'http' protocol string. Not sure that this is intentional and not a bug at the server, so made it optional
+            if posterUrl.startswith('//'):
+                posterUrl = 'http:' + posterUrl
+            return posterUrl
         except Exception, e:
             Log('Error fetching poster for item %s' % itemUrl)
             Log(e)
